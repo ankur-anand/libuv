@@ -146,7 +146,12 @@ int uv__next_timeout(const uv_loop_t* loop) {
   return diff;
 }
 
-
+/* This timer iS min heao DS so accessed by closest timer sorted by due time and iterate over
+    Also 1 node.js timer is not equal to 1 libuv timer 
+    
+    -- may be due to fact it can put so much strain on garbage collector need to check
+    mostly coalesced for the as in two timer that are due at the same time comes at the same time.
+*/
 void uv__run_timers(uv_loop_t* loop) {
   struct heap_node* heap_node;
   uv_timer_t* handle;
