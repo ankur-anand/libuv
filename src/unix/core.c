@@ -314,18 +314,18 @@ int uv_backend_fd(const uv_loop_t* loop) {
 
 
 int uv_backend_timeout(const uv_loop_t* loop) {
-  if (loop->stop_flag != 0)
+  if (loop->stop_flag != 0) /* if the loop is about to stop there is nothing we can do */
     return 0;
-
+   /* in short this is checking loop is alive or not */
   if (!uv__has_active_handles(loop) && !uv__has_active_reqs(loop))
     return 0;
-
+    /* if any idle handle, we block for zero property of idle handle */
   if (!QUEUE_EMPTY(&loop->idle_handles))
     return 0;
-
+    
   if (!QUEUE_EMPTY(&loop->pending_queue))
     return 0;
-
+    /* don't block for any closing handles too */
   if (loop->closing_handles)
     return 0;
 
