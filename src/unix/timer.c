@@ -153,6 +153,9 @@ int uv__next_timeout(const uv_loop_t* loop) {
     mostly coalesced for the as in two timer that are due at the same time comes at the same time.
 */
 void uv__run_timers(uv_loop_t* loop) {
+	/* The Structure of the event loop contains, so-called a bunch of timers
+	 * The start-up function of timers draws the timer handler from the heap with the shortest time
+	 * */
   struct heap_node* heap_node;
   uv_timer_t* handle;
 
@@ -162,12 +165,20 @@ void uv__run_timers(uv_loop_t* loop) {
       break;
 
     handle = container_of(heap_node, uv_timer_t, heap_node);
+    /* Once the handler has been drawn from the heap, the timeout value gets compared with the execution
+     * time of the event loop. */
     if (handle->timeout > loop->time)
       break;
 
-    uv_timer_stop(handle);
-    uv_timer_again(handle);
+    uv_timer_stop(handle); /* In case the timer is shorter this timer stops, it is removed from the heap
+    and its handler is also removed from the heap*/
+    uv_timer_again(handle); /* it checks whether the timer needs to be restarted again */
     handle->timer_cb(handle);
+
+    /* In Node.js we have the function setinterval and setTimeout, in terms of libuv it is the same - a timer
+     * (uv_timer_t), with only difference being the interval timer has a repeat flag set (repeat = 1) */
+    /* observation : in the case of the repetition flag set, the function uv_timer_stop will work twice for
+     * the timer handler */
   }
 }
 

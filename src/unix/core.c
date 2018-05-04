@@ -312,7 +312,8 @@ int uv_backend_fd(const uv_loop_t* loop) {
   return loop->backend_fd;
 }
 
-
+/* The calculation of the execution time of the external I/O implemented is simialr to the timer start 
+ * function, since the value of this time is calculated based on the nearest timer*/
 int uv_backend_timeout(const uv_loop_t* loop) {
   if (loop->stop_flag != 0) /* if the loop is about to stop there is nothing we can do */
     return 0;
@@ -332,7 +333,9 @@ int uv_backend_timeout(const uv_loop_t* loop) {
   return uv__next_timeout(loop);
 }
 
-
+/* simply checks if there is presence of handler type or request type or not
+* the result of this function will determine if the while loop will start or not
+*/
 static int uv__loop_alive(const uv_loop_t* loop) {
   return uv__has_active_handles(loop) ||
          uv__has_active_reqs(loop) ||
@@ -344,30 +347,49 @@ int uv_loop_alive(const uv_loop_t* loop) {
     return uv__loop_alive(loop);
 }
 
-
+/* start of the loop */
 int uv_run(uv_loop_t* loop, uv_run_mode mode) {
   int timeout;
   int r;
   int ran_pending;
 
-  r = uv__loop_alive(loop);
+  r = uv__loop_alive(loop); /* check whether the loop is alive or not */
+  /* In the absence of request or handlers, the runtime function will simply update the runtime of the event loop
+   * and immediately exit */
   if (!r)
     uv__update_time(loop);
 
+  /* If r != 0 and the stop flag is not set the event loop cycle will start. And the first operation of the event
+   * loop is also to update the execution time and this is what causes the setTimeOut and setImmediate undeterminist
+   * behaviour */
   while (r != 0 && loop->stop_flag == 0) {
-    uv__update_time(loop);
-    uv__run_timers(loop);
-    ran_pending = uv__run_pending(loop);
-    uv__run_idle(loop); /* maps from setImmediate from node to prevent the blocking of loop if any setImmediate 
-    is pending */
-    uv__run_prepare(loop);
+    uv__update_time(loop); /* update the current execution time of the loop*/
+    uv__run_timers(loop); /* launch of the timers */
+    ran_pending = uv__run_pending(loop); /* pending callbacks */
 
+    /* Below two function is also a function-runiing callbacks, but they have nothing to do with the I/O.
+     * In fact, these are some internal preparatory actions, which would be nice to do before starting the 
+     * external operations (I/O is meant)
+     *
+     * In Node.js there is no equivalent to thiese handleres, i.e We can not register a callback that would
+     * executed at exactly one of these steps. However we, need to make one reservation using process.nextTick
+     * we can  unitentionally execute the code in one of these steps, since this function is triggered directly
+     * at the current stage of the event lop, and this, in particular can be uv__run_idle or uv__run_prepare.
+     * The very same function, process.nextTick, has nothing to do with the library libuv */
+    uv__run_idle(loop); /* process,nextTick will happen */
+    uv__run_prepare(loop); /* process.nextTick() evaluates a callbacks up to process.maxDepth, setImmdediate evaluates
+			      one queued callback */
+
+    /* UV_RUN_ONCE is the blocking mode that runs until a request is processed. The key here is blocking */
     timeout = 0;
+    /* UV_RUN_DEFAULT blocking runs until manually stopped or referenced by any object */
     if ((mode == UV_RUN_ONCE && !ran_pending) || mode == UV_RUN_DEFAULT)
-      timeout = uv_backend_timeout(loop);
-
+      timeout = uv_backend_timeout(loop); /* calculating the time for performinng an external operation */ 
+   /* this timeout is really interesting because this is timeout blocking which is calculated from uv_backend_timeout
+    * which check the min timeout from the heap again
+    * SO uv__io_poll is timeoout blocking  but this time out depends upon situation as return value of uv_backend_timeout*/
     uv__io_poll(loop, timeout);
-    uv__run_check(loop); /* maps from setImmediate from node */
+    uv__run_check(loop);
     uv__run_closing_handles(loop);
 
     if (mode == UV_RUN_ONCE) {
@@ -384,7 +406,7 @@ int uv_run(uv_loop_t* loop, uv_run_mode mode) {
     }
 
     r = uv__loop_alive(loop);
-    if (mode == UV_RUN_ONCE || mode == UV_RUN_NOWAIT)
+    if (mode == UV_RUN_ONCE || mode == UV_RUN_NOWAIT) /* UV_RUN_NOWAIT skips the UV_BACKEND_TIMEOUT step
       break;
   }
 
@@ -765,7 +787,8 @@ static int uv__run_pending(uv_loop_t* loop) {
   QUEUE* q;
   QUEUE pq;
   uv__io_t* w;
-
+  /* calls are stored in the queue. It can be handlers reading or writing files, TCP or UDP connections,
+   * in general any I/O operations, beacuse the type does not really matter since, in unix everything is a  file*/
   if (QUEUE_EMPTY(&loop->pending_queue))
     return 0;
 
@@ -776,7 +799,7 @@ static int uv__run_pending(uv_loop_t* loop) {
     QUEUE_REMOVE(q);
     QUEUE_INIT(q);
     w = QUEUE_DATA(q, uv__io_t, pending_queue);
-    w->cb(loop, w, POLLOUT);
+    w->cb(loop, w, POLLOUT); /* worker */
   }
 
   return 1;
