@@ -389,7 +389,16 @@ int uv_run(uv_loop_t* loop, uv_run_mode mode) {
     * which check the min timeout from the heap again
     * SO uv__io_poll is timeoout blocking  but this time out depends upon situation as return value of uv_backend_timeout*/
     uv__io_poll(loop, timeout);
-    uv__run_check(loop);
+    uv__run_check(loop); /* inherently identical to the functions uv__run_idle and uv__run_prepare
+			    i.e this is the launch of callbacks that register according to the same
+			    principle and call after external operations. However, in this case we 
+			    have the ability to register such handlers from Node.js. This is setImmediate
+			    (that is, immediate execution after an external I/O operation) */
+
+    /* penultimate step is the start of the closing handlers.
+     * This function bypasses the linked list of closing hanlders and tries to finish the closing
+     * for each. If the handler has a special callback to close, then, at the end this callback is started.
+     * */
     uv__run_closing_handles(loop);
 
     if (mode == UV_RUN_ONCE) {
